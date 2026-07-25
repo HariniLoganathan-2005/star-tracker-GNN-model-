@@ -18,6 +18,62 @@ import config
 logger = logging.getLogger(__name__)
 
 
+def _make_camera_for_image(fits_image):
+    """
+    Build a StarTrackerCamera whose intrinsics match the actual image.
+
+    Synthetic images use the default 20° FOV / 1024-px sensor.
+    SkyView (and any other WCS) images derive focal length from
+    the WCS pixel-scale so angular distances are computed correctly.
+    """
+    from camera.camera_model import StarTrackerCamera
+
+    h, w = fits_image.data.shape
+    cx, cy = w / 2.0, h / 2.0
+
+    # Synthetic images carry the SYNTHIMG flag — use default camera
+    if fits_image.header.get('SYNTHIMG', False):
+        return StarTrackerCamera()
+
+    # For WCS images, read pixel scale → derive focal length
+    if fits_image.has_wcs:
+        try:
+            wcs = fits_image.wcs
+            # CD matrix or CDELT gives deg/pixel
+            pix_scale_deg = None
+            if hasattr(wcs.wcs, 'cd') and wcs.wcs.cd is not None:
+                pix_scale_deg = abs(wcs.wcs.cd[0, 0])  # deg/pixel
+            elif hasattr(wcs.wcs, 'cdelt') and wcs.wcs.cdelt is not None:
+                scales = np.abs(wcs.wcs.cdelt)
+                if len(scales) >= 2:
+                    pix_scale_deg = float(scales[0])  # deg/pixel
+
+            if pix_scale_deg and pix_scale_deg > 0:
+                # focal length in pixels: 1 pixel = pix_scale_deg degrees
+                # f = 1 / tan(pix_scale_deg * pi/180) ≈ 1/rad for small angles
+                focal_length_px = 1.0 / np.tan(np.radians(pix_scale_deg))
+                logger.info(
+                    f"WCS camera: {w}×{h}px, "
+                    f"scale={pix_scale_deg*3600:.2f} arcsec/px, "
+                    f"f={focal_length_px:.1f}px"
+                )
+                return StarTrackerCamera(
+                    focal_length=focal_length_px,
+                    cx=cx, cy=cy,
+                    width=w, height=h,
+                    k1=0.0, k2=0.0,   # real-sky images: no synthetic distortion
+                )
+        except Exception as e:
+            logger.warning(f"Could not derive WCS camera params: {e}")
+
+    # Fallback — use default star-tracker camera but warn
+    logger.warning(
+        f"No WCS / synthetic flag — using default camera "
+        f"(FOV mismatch likely for {w}×{h} images)"
+    )
+    return StarTrackerCamera()
+
+
 def run_validation(catalogue, tri_db, image_dir=None, output_csv=None):
     """
     Run the full pipeline on all FITS images in a directory
@@ -46,7 +102,6 @@ def run_validation(catalogue, tri_db, image_dir=None, output_csv=None):
     from modules.m5_triangle_match import match_stars
     from modules.m7_quest import quest_from_matches
     from modules.m9_output import format_output
-    from camera.camera_model import StarTrackerCamera
     from validation.ground_truth import extract_ground_truth, compute_pointing_error
 
     if image_dir is None:
@@ -62,7 +117,6 @@ def run_validation(catalogue, tri_db, image_dir=None, output_csv=None):
 
     logger.info(f"Running validation on {len(fits_files)} images from {image_dir}...")
 
-    camera = StarTrackerCamera()
     results = []
 
     for i, filepath in enumerate(fits_files):
@@ -87,6 +141,9 @@ def run_validation(catalogue, tri_db, image_dir=None, output_csv=None):
             # Module 1: Load image
             fits_image = load_fits_image(filepath)
 
+            # Build a camera model that matches THIS image's actual FOV
+            camera = _make_camera_for_image(fits_image)
+
             # Extract ground truth
             gt = extract_ground_truth(fits_image)
 
@@ -102,11 +159,25 @@ def run_validation(catalogue, tri_db, image_dir=None, output_csv=None):
                 results.append(record)
                 continue
 
-            # Module 4: Pixel → vectors
+            # Module 4: Pixel → vectors (uses image-matched camera)
             star_vectors = convert_pixels_to_vectors(detected_stars, camera)
 
             # Module 5: Triangle matching
-            matches, success = match_stars(star_vectors, tri_db, catalogue)
+            # For narrow-FOV WCS images, use a tighter tolerance:
+            # ~2 × pixel_scale so we don't flood the KD-tree with matches.
+            # For wide-FOV synthetic images use the config default.
+            if fits_image.has_wcs and not fits_image.header.get('SYNTHIMG', False):
+                # camera.fov_deg was set from WCS; derive tolerance from pixel scale
+                h_px, w_px = fits_image.data.shape
+                pixel_scale_deg = camera.fov_deg / max(w_px, h_px)
+                tolerance_deg = max(2.0 * pixel_scale_deg, 0.003)  # at least 0.003°
+                logger.info(f"Using WCS-derived tolerance: {tolerance_deg*3600:.1f} arcsec")
+            else:
+                tolerance_deg = None  # use config default for synthetic
+
+            matches, success = match_stars(
+                star_vectors, tri_db, catalogue, tolerance_deg=tolerance_deg
+            )
             record['n_matched'] = len(matches)
 
             if not success:

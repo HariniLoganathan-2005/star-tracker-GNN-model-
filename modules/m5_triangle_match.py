@@ -166,7 +166,18 @@ class TriangleDatabase:
         logger.info(f"Loaded {len(self.pair_distances)} pairs")
 
 
-def match_stars(star_vectors, tri_db, catalogue):
+def match_stars(star_vectors, tri_db, catalogue, tolerance_deg=None):
+    """
+    Match detected stars against the catalogue using pair-based voting.
+
+    Parameters
+    ----------
+    tolerance_deg : float or None
+        Angular matching tolerance in degrees.  If None, uses
+        config.TRIANGLE_ANGLE_TOLERANCE_DEG (0.01° default).
+        Pass a tighter value (e.g. 0.005°) for narrow-FOV images
+        to reduce catalogue ambiguity.
+    """
     if not tri_db.is_built:
         raise RuntimeError("Triangle database not built.")
 
@@ -181,8 +192,9 @@ def match_stars(star_vectors, tri_db, catalogue):
 
     logger.info(f"Matching with {n_use} brightest stars (of {n_stars} detected)")
 
-    # Tight tolerance for initial pair matching
-    tolerance = config.TRIANGLE_ANGLE_TOLERANCE_DEG
+    # Use provided tolerance or fall back to config default
+    tolerance = tolerance_deg if tolerance_deg is not None else config.TRIANGLE_ANGLE_TOLERANCE_DEG
+    logger.info(f"Pair-matching tolerance: {tolerance:.4f}°")
 
     # ===============================================================
     # Stage 1: Pair-based voting
@@ -248,13 +260,25 @@ def match_stars(star_vectors, tri_db, catalogue):
             continue
 
         # Sort by votes
-        sorted_cats = sorted(star_votes.items(), key=lambda x: -x[1])
-        best_cat, best_votes = sorted_cats[0]
-        second_votes = sorted_cats[1][1] if len(sorted_cats) > 1 else 0
-
-        # The ratio between best and second-best is key
-        # If ratio > 1.5, the best candidate is likely correct
-        vote_ratio = best_votes / max(second_votes, 1)
+        vote_counts = sorted(star_votes.items(), key=lambda x: -x[1])
+        
+        # Ratio test
+        best_cat = None
+        best_votes = 0
+        second_votes = 0
+        
+        if len(vote_counts) == 1:
+            best_cat, best_votes = vote_counts[0]
+            vote_ratio = float('inf')
+        elif len(vote_counts) > 1:
+            best_cat, best_votes = vote_counts[0]
+            second_votes = vote_counts[1][1]
+            if best_votes >= config.QUEST_MIN_MATCHES and (best_votes >= second_votes * 1.5 or best_votes - second_votes >= 5):
+                vote_ratio = best_votes / max(second_votes, 1)
+            else:
+                continue
+        else:
+            continue
 
         candidates[det_idx] = {
             'cat_idx': best_cat,

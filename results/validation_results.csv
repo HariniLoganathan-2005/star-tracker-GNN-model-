@@ -1,0 +1,6 @@
+filename,n_detected,n_matched,method,success,angular_error_arcsec,ra_error_arcsec,dec_error_arcsec,residual_arcsec
+skyview_001.fits,346,0,triangle_failed,False,nan,nan,nan,nan
+skyview_002.fits,300,0,triangle_failed,False,nan,nan,nan,nan
+skyview_003.fits,267,0,triangle_failed,False,nan,nan,nan,nan
+skyview_004.fits,22,0,triangle_failed,False,nan,nan,nan,nan
+skyview_005.fits,333,0,triangle_failed,False,nan,nan,nan,nan

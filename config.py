@@ -95,12 +95,12 @@ BACKGROUND_FILTER_SIZE = 3    # Sigma for background smoothing
 # =============================================================================
 # Synthetic Image Generation Parameters
 # =============================================================================
-STAR_PSF_SIGMA = 1.5          # Gaussian PSF sigma in pixels (star point spread)
-READ_NOISE_SIGMA = 5.0        # Gaussian read noise standard deviation (ADU)
+STAR_PSF_SIGMA = 1.2          # Gaussian PSF sigma in pixels (star point spread)
+READ_NOISE_SIGMA = 1.0        # Gaussian read noise standard deviation (ADU)
 DARK_CURRENT_RATE = 0.1       # Dark current electrons per pixel per second
 EXPOSURE_TIME = 0.5           # Exposure time in seconds
 PHOTON_GAIN = 2.0             # Electrons per ADU
-BASE_STAR_FLUX = 1e5          # Flux of a magnitude-0 star (ADU in exposure)
+BASE_STAR_FLUX = 5e5          # Flux of a magnitude-0 star (ADU in exposure)
 SKY_BACKGROUND_LEVEL = 10.0   # Constant sky background level (ADU)
 BIT_DEPTH = 16                # Sensor bit depth
 SATURATION_LEVEL = 2**16 - 1  # Maximum pixel value (65535 for 16-bit)

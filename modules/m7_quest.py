@@ -203,6 +203,8 @@ def quest(body_vectors, reference_vectors, weights=None):
             weights[best_inliers]
         )
     else:
+        if best_q is None:
+            raise ValueError("QUEST failed: RANSAC could not find any valid orientation (all matches are likely outliers)")
         q_refined = best_q
         best_inliers = np.arange(n_obs)
 

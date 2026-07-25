@@ -141,9 +141,23 @@ def process_single_image(filepath, catalogue, tri_db, verbose=False):
     print(f"  [M5] Triangle matching: {'SUCCESS' if success else 'FAILED'} "
           f"({len(matches)} matches)")
 
+    # Module 6: GNN fallback
     if not success:
-        print(f"  ✗ Star identification failed")
-        print(f"    → Module 6 (GNN) not yet implemented (Phase 2)")
+        print(f"  [M6] Triangle failed → trying GNN fallback…")
+        try:
+            from modules.m6_gnn import gnn_identify_stars, TORCH_AVAILABLE
+            if TORCH_AVAILABLE:
+                matches, success = gnn_identify_stars(
+                    detected_stars, camera, catalogue, tri_db)
+                print(f"  [M6] GNN: {'SUCCESS' if success else 'FAILED'} "
+                      f"({len(matches)} matches)")
+            else:
+                print(f"  [M6] GNN unavailable (PyTorch not installed)")
+        except Exception as e:
+            print(f"  [M6] GNN error: {e}")
+
+    if not success:
+        print(f"  ✗ Star identification failed (both M5 and M6)")
         return None
 
     # Module 7: QUEST

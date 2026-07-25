@@ -145,6 +145,11 @@ def detect_stars(image, noise_sigma=None, threshold_sigma=None):
         from modules.m2_preprocessing import estimate_noise
         noise_sigma = estimate_noise(image)
 
+    # Enforce physical noise floor: never go below the camera read noise.
+    # After background subtraction, synthetic images are mostly zero so MAD
+    # returns ~0, causing the threshold to collapse and 60k+ blobs to appear.
+    noise_sigma = max(noise_sigma, config.READ_NOISE_SIGMA)
+
     threshold = threshold_sigma * noise_sigma
     logger.info(f"Detection threshold: {threshold:.4f} ADU "
                 f"(noise σ={noise_sigma:.4f})")
